@@ -7,6 +7,8 @@ import { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
+import { logSearch, getHistory } from "./db.js";
+
 const API_KEY = process.env.OPENWEATHER_API_KEY;
 
 if (!API_KEY) {
@@ -43,6 +45,20 @@ server.registerTool(
     );
 
     const data = response.data;
+
+    const summary =
+      `Temp: ${data.main.temp}°C, ` +
+      `Feels: ${data.main.feels_like}°C, ` +
+      `${data.weather[0].description}, ` +
+      `Humidity: ${data.main.humidity}%, ` +
+      `Wind: ${data.wind.speed} m/s`;
+
+    logSearch({
+      city,
+      tool: "get_current_weather",
+      summary,
+      rawResponse: data,
+    });
 
     return {
       content: [
@@ -97,11 +113,91 @@ server.registerTool(
       })
       .join("\n");
 
+    const first = data[0];
+    const summary = first
+      ? `First slot ${first.dt_txt}: ${first.main.temp}°C, ${first.weather[0].description}`
+      : "No forecast data";
+
+    logSearch({
+      city,
+      tool: "get_weather_forecast",
+      summary,
+      rawResponse: data,
+    });
+
     return {
       content: [
         {
           type: "text",
           text: `Forecast for ${city}\n\n${forecast}`,
+        },
+      ],
+    };
+  },
+);
+
+// =======================
+// SEARCH HISTORY
+// =======================
+
+server.registerTool(
+  "get_search_history",
+  {
+    description:
+      "Get past weather searches stored locally. " +
+      "Use `days` to get all searches from the last N days (e.g. days=10 for '10 days search story'), " +
+      "`limit` to cap how many rows are returned, and `city` to filter by a specific city.",
+    inputSchema: {
+      days: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe("Return searches from the last N days"),
+      limit: z
+        .number()
+        .int()
+        .positive()
+        .optional()
+        .describe("Maximum number of rows to return"),
+      city: z
+        .string()
+        .optional()
+        .describe("Filter to a specific city (case-insensitive)"),
+    },
+  },
+  async ({ days, limit, city }) => {
+    const rows = getHistory({ days, limit, city });
+
+    if (rows.length === 0) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: "No search history found for the given filters.",
+          },
+        ],
+      };
+    }
+
+    const header =
+      `Found ${rows.length} search${rows.length === 1 ? "" : "es"}` +
+      (days !== undefined ? ` in the last ${days} day${days === 1 ? "" : "s"}` : "") +
+      (city ? ` for ${city}` : "") +
+      ":\n";
+
+    const body = rows
+      .map(
+        (r, i) =>
+          `${i + 1}. [${r.searched_at}] ${r.city} (${r.tool})\n   ${r.summary ?? ""}`,
+      )
+      .join("\n");
+
+    return {
+      content: [
+        {
+          type: "text",
+          text: `${header}\n${body}`,
         },
       ],
     };

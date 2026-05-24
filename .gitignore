@@ -50,5 +50,11 @@ coverage/
 .DS_Store
 Thumbs.db
 
+# Local SQLite DB
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
 # Claude
 .claude/settings.local.json
