@@ -3,7 +3,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DB_PATH = path.join(__dirname, "search_history.db");
+const DB_PATH =
+  process.env.WEATHER_MCP_DB_PATH ?? path.join(__dirname, "search_history.db");
 
 const db = new DatabaseSync(DB_PATH);
 
