@@ -32,17 +32,21 @@ describe("describeApiError", () => {
   });
 
   it("maps 401 to an invalid-key message", () => {
-    expect(describeApiError(makeAxiosError(401), `City "X"`)).toMatch(/invalid|unauthorized/i);
+    expect(describeApiError(makeAxiosError(401), `City "X"`)).toMatch(
+      /invalid|unauthorized/i,
+    );
   });
 
   it("maps 429 to a rate-limit message", () => {
-    expect(describeApiError(makeAxiosError(429), `City "X"`)).toMatch(/rate limit/i);
+    expect(describeApiError(makeAxiosError(429), `City "X"`)).toMatch(
+      /rate limit/i,
+    );
   });
 
   it("includes the upstream message for unhandled statuses", () => {
-    expect(describeApiError(makeAxiosError(503, "service down"), `City "X"`)).toContain(
-      "service down",
-    );
+    expect(
+      describeApiError(makeAxiosError(503, "service down"), `City "X"`),
+    ).toContain("service down");
   });
 
   it("recognizes timeout errors (ECONNABORTED)", () => {
@@ -51,13 +55,15 @@ describe("describeApiError", () => {
   });
 
   it("falls back to a network-error message for generic Errors", () => {
-    expect(describeApiError(new Error("DNS lookup failed"), `City "X"`)).toContain(
-      "DNS lookup failed",
-    );
+    expect(
+      describeApiError(new Error("DNS lookup failed"), `City "X"`),
+    ).toContain("DNS lookup failed");
   });
 
   it("handles non-Error throwables", () => {
-    expect(describeApiError("string thrown", `City "X"`)).toContain("string thrown");
+    expect(describeApiError("string thrown", `City "X"`)).toContain(
+      "string thrown",
+    );
   });
 });
 

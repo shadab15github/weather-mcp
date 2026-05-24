@@ -3,7 +3,10 @@ import path from "node:path";
 import os from "node:os";
 import fs from "node:fs";
 
-const DB_FILE = path.join(os.tmpdir(), `weather-mcp-test-${process.pid}-${Date.now()}.db`);
+const DB_FILE = path.join(
+  os.tmpdir(),
+  `weather-mcp-test-${process.pid}-${Date.now()}.db`,
+);
 process.env.WEATHER_MCP_DB_PATH = DB_FILE;
 
 // Dynamically import so the WEATHER_MCP_DB_PATH env var is honored at module init.
@@ -50,8 +53,18 @@ describe("logSearch + getHistory basics", () => {
 
   it("filters by city (case-insensitive)", () => {
     db.deleteHistory({ all: true });
-    db.logSearch({ city: "Mumbai", tool: "get_current_weather", summary: "a", rawResponse: {} });
-    db.logSearch({ city: "Delhi", tool: "get_current_weather", summary: "b", rawResponse: {} });
+    db.logSearch({
+      city: "Mumbai",
+      tool: "get_current_weather",
+      summary: "a",
+      rawResponse: {},
+    });
+    db.logSearch({
+      city: "Delhi",
+      tool: "get_current_weather",
+      summary: "b",
+      rawResponse: {},
+    });
     expect(db.getHistory({ city: "mumbai" })).toHaveLength(1);
     expect(db.getHistory({ city: "MUMBAI" })).toHaveLength(1);
     expect(db.getHistory({ city: "Delhi" })).toHaveLength(1);
@@ -61,14 +74,24 @@ describe("logSearch + getHistory basics", () => {
   it("limit caps the row count", () => {
     db.deleteHistory({ all: true });
     for (let i = 0; i < 10; i++) {
-      db.logSearch({ city: `City${i}`, tool: "get_current_weather", summary: "x", rawResponse: {} });
+      db.logSearch({
+        city: `City${i}`,
+        tool: "get_current_weather",
+        summary: "x",
+        rawResponse: {},
+      });
     }
     expect(db.getHistory({ limit: 3 })).toHaveLength(3);
   });
 
   it("days returns only rows in the window", () => {
     db.deleteHistory({ all: true });
-    db.logSearch({ city: "Recent", tool: "get_current_weather", summary: "x", rawResponse: {} });
+    db.logSearch({
+      city: "Recent",
+      tool: "get_current_weather",
+      summary: "x",
+      rawResponse: {},
+    });
     // days=0 wouldn't be valid in the schema, but the SQL accepts any positive number.
     expect(db.getHistory({ days: 1 })).toHaveLength(1);
   });
@@ -77,9 +100,24 @@ describe("logSearch + getHistory basics", () => {
 describe("60-second rolling dedupe", () => {
   it("collapses rapid same-city/tool searches and increments times_searched", () => {
     db.deleteHistory({ all: true });
-    db.logSearch({ city: "Mumbai", tool: "get_current_weather", summary: "v1", rawResponse: {} });
-    db.logSearch({ city: "MUMBAI", tool: "get_current_weather", summary: "v2", rawResponse: {} });
-    db.logSearch({ city: "mumbai", tool: "get_current_weather", summary: "v3", rawResponse: {} });
+    db.logSearch({
+      city: "Mumbai",
+      tool: "get_current_weather",
+      summary: "v1",
+      rawResponse: {},
+    });
+    db.logSearch({
+      city: "MUMBAI",
+      tool: "get_current_weather",
+      summary: "v2",
+      rawResponse: {},
+    });
+    db.logSearch({
+      city: "mumbai",
+      tool: "get_current_weather",
+      summary: "v3",
+      rawResponse: {},
+    });
 
     const rows = db.getHistory();
     expect(rows).toHaveLength(1);
@@ -89,15 +127,35 @@ describe("60-second rolling dedupe", () => {
 
   it("does NOT dedupe across different tools", () => {
     db.deleteHistory({ all: true });
-    db.logSearch({ city: "Mumbai", tool: "get_current_weather", summary: "a", rawResponse: {} });
-    db.logSearch({ city: "Mumbai", tool: "get_weather_forecast", summary: "b", rawResponse: {} });
+    db.logSearch({
+      city: "Mumbai",
+      tool: "get_current_weather",
+      summary: "a",
+      rawResponse: {},
+    });
+    db.logSearch({
+      city: "Mumbai",
+      tool: "get_weather_forecast",
+      summary: "b",
+      rawResponse: {},
+    });
     expect(db.getHistory()).toHaveLength(2);
   });
 
   it("does NOT dedupe across different cities", () => {
     db.deleteHistory({ all: true });
-    db.logSearch({ city: "Mumbai", tool: "get_current_weather", summary: "a", rawResponse: {} });
-    db.logSearch({ city: "Delhi", tool: "get_current_weather", summary: "b", rawResponse: {} });
+    db.logSearch({
+      city: "Mumbai",
+      tool: "get_current_weather",
+      summary: "a",
+      rawResponse: {},
+    });
+    db.logSearch({
+      city: "Delhi",
+      tool: "get_current_weather",
+      summary: "b",
+      rawResponse: {},
+    });
     expect(db.getHistory()).toHaveLength(2);
   });
 
@@ -134,8 +192,18 @@ describe("deleteHistory", () => {
 
   it("deletes by city", () => {
     db.deleteHistory({ all: true });
-    db.logSearch({ city: "Mumbai", tool: "get_current_weather", summary: "a", rawResponse: {} });
-    db.logSearch({ city: "Delhi", tool: "get_current_weather", summary: "b", rawResponse: {} });
+    db.logSearch({
+      city: "Mumbai",
+      tool: "get_current_weather",
+      summary: "a",
+      rawResponse: {},
+    });
+    db.logSearch({
+      city: "Delhi",
+      tool: "get_current_weather",
+      summary: "b",
+      rawResponse: {},
+    });
     const deleted = db.deleteHistory({ city: "Mumbai" });
     expect(deleted).toBe(1);
     expect(db.getHistory()).toHaveLength(1);
@@ -143,8 +211,18 @@ describe("deleteHistory", () => {
 
   it("deletes all when all=true", () => {
     db.deleteHistory({ all: true });
-    db.logSearch({ city: "X", tool: "get_current_weather", summary: "x", rawResponse: {} });
-    db.logSearch({ city: "Y", tool: "get_current_weather", summary: "y", rawResponse: {} });
+    db.logSearch({
+      city: "X",
+      tool: "get_current_weather",
+      summary: "x",
+      rawResponse: {},
+    });
+    db.logSearch({
+      city: "Y",
+      tool: "get_current_weather",
+      summary: "y",
+      rawResponse: {},
+    });
     expect(db.deleteHistory({ all: true })).toBe(2);
     expect(db.getHistory()).toHaveLength(0);
   });
@@ -153,16 +231,23 @@ describe("deleteHistory", () => {
 describe("trimRawResponses", () => {
   it("nulls raw_response only for rows older than the cutoff", async () => {
     db.deleteHistory({ all: true });
-    db.logSearch({ city: "Recent", tool: "get_current_weather", summary: "a", rawResponse: { keep: true } });
+    db.logSearch({
+      city: "Recent",
+      tool: "get_current_weather",
+      summary: "a",
+      rawResponse: { keep: true },
+    });
 
     // Backdate a row using the raw DB connection — we don't have time-travel
     // exposed via the public API, so reach in via a fresh handle.
     const { DatabaseSync } = await import("node:sqlite");
     const raw = new DatabaseSync(DB_FILE);
-    raw.prepare(
-      `INSERT INTO searches (city, tool, summary, raw_response, searched_at)
+    raw
+      .prepare(
+        `INSERT INTO searches (city, tool, summary, raw_response, searched_at)
        VALUES ('Old', 'get_current_weather', 'b', '{"old":true}', datetime('now','-10 days'))`,
-    ).run();
+      )
+      .run();
     raw.close();
 
     expect(db.getHistory()).toHaveLength(2);
@@ -189,9 +274,27 @@ describe("getStats + getDistinctCities", () => {
 
   it("sums times_searched in topCities (intent count, not row count)", () => {
     db.deleteHistory({ all: true });
-    db.logSearch({ city: "Mumbai", tool: "get_current_weather", summary: "a", rawResponse: {}, country: "IN" });
-    db.logSearch({ city: "Mumbai", tool: "get_current_weather", summary: "b", rawResponse: {}, country: "IN" });
-    db.logSearch({ city: "Mumbai", tool: "get_weather_forecast", summary: "c", rawResponse: {}, country: "IN" });
+    db.logSearch({
+      city: "Mumbai",
+      tool: "get_current_weather",
+      summary: "a",
+      rawResponse: {},
+      country: "IN",
+    });
+    db.logSearch({
+      city: "Mumbai",
+      tool: "get_current_weather",
+      summary: "b",
+      rawResponse: {},
+      country: "IN",
+    });
+    db.logSearch({
+      city: "Mumbai",
+      tool: "get_weather_forecast",
+      summary: "c",
+      rawResponse: {},
+      country: "IN",
+    });
     // 1 deduped row (×2) + 1 distinct-tool row = 2 rows, 3 intents
 
     const stats = db.getStats(30);
@@ -203,8 +306,20 @@ describe("getStats + getDistinctCities", () => {
 
   it("getDistinctCities returns one row per city with country", () => {
     db.deleteHistory({ all: true });
-    db.logSearch({ city: "Mumbai", tool: "get_current_weather", summary: "a", rawResponse: {}, country: "IN" });
-    db.logSearch({ city: "Tokyo",  tool: "get_current_weather", summary: "b", rawResponse: {}, country: "JP" });
+    db.logSearch({
+      city: "Mumbai",
+      tool: "get_current_weather",
+      summary: "a",
+      rawResponse: {},
+      country: "IN",
+    });
+    db.logSearch({
+      city: "Tokyo",
+      tool: "get_current_weather",
+      summary: "b",
+      rawResponse: {},
+      country: "JP",
+    });
     const cities = db.getDistinctCities();
     expect(cities).toHaveLength(2);
     expect(cities.find((c) => c.city === "Mumbai")?.country).toBe("IN");

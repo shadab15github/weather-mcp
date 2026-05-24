@@ -30,7 +30,9 @@ db.exec(`
 `);
 
 function existingColumns(): Set<string> {
-  const rows = db.prepare(`PRAGMA table_info(searches)`).all() as Array<{ name: string }>;
+  const rows = db.prepare(`PRAGMA table_info(searches)`).all() as Array<{
+    name: string;
+  }>;
   return new Set(rows.map((r) => r.name));
 }
 
@@ -174,7 +176,11 @@ export interface GetHistoryOptions {
   city?: string;
 }
 
-export function getHistory({ days, limit, city }: GetHistoryOptions = {}): SearchRow[] {
+export function getHistory({
+  days,
+  limit,
+  city,
+}: GetHistoryOptions = {}): SearchRow[] {
   const where: string[] = [];
   const params: (string | number)[] = [];
 
@@ -189,7 +195,8 @@ export function getHistory({ days, limit, city }: GetHistoryOptions = {}): Searc
   }
 
   const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
-  const limitSql = limit !== undefined ? `LIMIT ${Math.max(1, Math.floor(limit))}` : "";
+  const limitSql =
+    limit !== undefined ? `LIMIT ${Math.max(1, Math.floor(limit))}` : "";
 
   const sql = `
     SELECT id, city, tool, summary, raw_response, searched_at,
@@ -213,7 +220,11 @@ export interface DeleteHistoryOptions {
   all?: boolean;
 }
 
-export function deleteHistory({ days, city, all }: DeleteHistoryOptions): number {
+export function deleteHistory({
+  days,
+  city,
+  all,
+}: DeleteHistoryOptions): number {
   if (!all && days === undefined && !city) {
     throw new Error(
       "deleteHistory requires at least one filter (days, city, or all=true).",

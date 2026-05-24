@@ -48,10 +48,10 @@ const server = new McpServer({
 // SHARED HELPERS
 // =======================
 
-const CURRENT_TTL_MS = 10 * 60 * 1000;
-const FORECAST_TTL_MS = 30 * 60 * 1000;
-const AQI_TTL_MS = 30 * 60 * 1000;
-const GEOCODE_TTL_MS = 24 * 60 * 60 * 1000;
+const CURRENT_TTL_MS = 10 * 60 * 1000; // 10 minutes
+const FORECAST_TTL_MS = 30 * 60 * 1000; // 30 minutes (forecast changes less frequently than current conditions)
+const AQI_TTL_MS = 30 * 60 * 1000; // 30 minutes
+const GEOCODE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 interface CacheEntry {
   data: unknown;
@@ -299,7 +299,9 @@ server.registerTool(
       });
 
       return {
-        content: [{ type: "text", text: renderCurrent(data, label, u, cached) }],
+        content: [
+          { type: "text", text: renderCurrent(data, label, u, cached) },
+        ],
       };
     } catch (err) {
       return errorResult(describeApiError(err, `Coordinates (${lat}, ${lon})`));
@@ -509,14 +511,19 @@ server.registerTool(
       if (rows.length === 0) {
         return {
           content: [
-            { type: "text", text: "No search history found for the given filters." },
+            {
+              type: "text",
+              text: "No search history found for the given filters.",
+            },
           ],
         };
       }
 
       const header =
         `Found ${rows.length} search${rows.length === 1 ? "" : "es"}` +
-        (days !== undefined ? ` in the last ${days} day${days === 1 ? "" : "s"}` : "") +
+        (days !== undefined
+          ? ` in the last ${days} day${days === 1 ? "" : "s"}`
+          : "") +
         (city ? ` for ${city}` : "") +
         ":\n";
 

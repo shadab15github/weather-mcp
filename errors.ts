@@ -29,7 +29,8 @@ export function describeApiError(err: unknown, label: string): string {
       (err.response.data as { message?: string } | undefined)?.message ??
       err.message;
     if (status === 404) return `${label} not found by OpenWeather.`;
-    if (status === 401) return `OpenWeather API key is invalid or unauthorized.`;
+    if (status === 401)
+      return `OpenWeather API key is invalid or unauthorized.`;
     if (status === 429)
       return `OpenWeather rate limit hit. Please retry in a minute.`;
     return `OpenWeather error (${status}): ${apiMessage}`;
