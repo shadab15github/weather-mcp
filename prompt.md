@@ -344,6 +344,110 @@ Using weather-mcp, show me the resource weather://history/city/Mumbai.
 
 ---
 
+# Data Quality
+
+Prompts that exercise the DB data-quality improvements: **coords + country code stored per row**, **60-second rolling dedupe** with a `times_searched` counter, and **automatic raw_response trim** for rows older than 7 days.
+
+## 16. Country code & coords in history
+
+```
+Using weather-mcp, get current weather in Mumbai.
+```
+```
+Using weather-mcp, get current weather in "London,GB".
+```
+```
+Using weather-mcp, get weather by coords lat=35.6762, lon=139.6503.
+```
+*(Tokyo — country resolved from API)*
+```
+Using weather-mcp, tell me my recent searches.
+```
+
+Expected: each row now shows the country tag, e.g.
+
+```
+1. [2026-05-24 07:30:12] Mumbai (IN) (get_current_weather)
+   Temp: 30.5°C, scattered clouds, Humidity: 70%, Wind: 3.5 m/s
+```
+
+## 17. Springfield ambiguity (two cities with the same name, different country)
+
+```
+Using weather-mcp, get current weather in "Springfield,US".
+```
+```
+Using weather-mcp, get current weather in "Springfield,AU".
+```
+```
+Using weather-mcp, show only my Springfield searches.
+```
+
+Both rows appear with their distinct country tags (US vs AU) — no more silent collision.
+
+## 18. Rolling 60-second dedupe (`×N` counter)
+
+Spam the same city/tool a few times within ~10 seconds:
+
+```
+Using weather-mcp, get current weather in Mumbai.
+```
+```
+Using weather-mcp, get current weather in Mumbai.
+```
+```
+Using weather-mcp, what's the weather in MUMBAI?
+```
+*(case-insensitive — still dedupes)*
+```
+Using weather-mcp, show me my Mumbai searches.
+```
+
+Expected: **one** row with `[×3]` next to the city, summary reflects the most recent call. Same-city searches more than 60 s apart create a fresh row.
+
+```
+Using weather-mcp, give me my search stats.
+```
+
+Top-cities count uses `SUM(times_searched)`, so the `[×3]` row counts as 3 intents.
+
+## 19. Different tool / different city should NOT dedupe
+
+```
+Using weather-mcp, get current weather in Mumbai.
+```
+```
+Using weather-mcp, give me the 5 day forecast for Mumbai.
+```
+```
+Using weather-mcp, get air quality for Mumbai.
+```
+```
+Using weather-mcp, show only my Mumbai searches.
+```
+
+Expected: 3 distinct rows (one per tool), each with its own `times_searched` counter.
+
+## 20. raw_response trim (manual verification)
+
+The server auto-trims `raw_response` for rows older than 7 days on startup and after every 100 inserts. To verify manually after some history exists:
+
+```
+node -e "const {DatabaseSync}=require('node:sqlite');const db=new DatabaseSync('search_history.db');console.log(db.prepare('SELECT id, city, searched_at, length(raw_response) AS raw_len FROM searches ORDER BY searched_at DESC LIMIT 20').all())"
+```
+
+Rows older than 7 days will show `raw_len: null` (raw_response was trimmed). Recent rows still carry their JSON.
+
+To force a trim cycle (e.g. for testing), backdate a row and restart the server:
+
+```
+node -e "const {DatabaseSync}=require('node:sqlite');const db=new DatabaseSync('search_history.db');db.exec(\"UPDATE searches SET searched_at='2020-01-01 00:00:00' WHERE id=1\")"
+```
+
+Then run `npm start` — startup trim will null its `raw_response`.
+
+---
+
 ## Notes
 
 - The connector name your client shows depends on how you registered the MCP server. The server is named `weather-mcp-server` (see `server.ts`); the project folder is `weather-mcp`. Use whichever name appears in your client's connector list (e.g. the key under `mcpServers` in Claude Desktop's config).

@@ -251,6 +251,9 @@ server.registerTool(
         tool: "get_current_weather",
         summary,
         rawResponse: data,
+        lat: data.coord?.lat ?? null,
+        lon: data.coord?.lon ?? null,
+        country: data.sys?.country ?? null,
       });
 
       return {
@@ -302,6 +305,9 @@ server.registerTool(
         tool: "get_weather_by_coords",
         summary,
         rawResponse: data,
+        lat,
+        lon,
+        country: data.sys?.country ?? null,
       });
 
       return {
@@ -325,6 +331,11 @@ interface ForecastSlot {
 
 interface ForecastResponse {
   list: ForecastSlot[];
+  city?: {
+    name?: string;
+    country?: string;
+    coord?: { lat: number; lon: number };
+  };
 }
 
 interface DailySummary {
@@ -408,6 +419,9 @@ server.registerTool(
         tool: "get_weather_forecast",
         summary,
         rawResponse: days,
+        lat: data.city?.coord?.lat ?? null,
+        lon: data.city?.coord?.lon ?? null,
+        country: data.city?.country ?? null,
       });
 
       const cacheNote = cached ? " (cached)" : "";
@@ -490,6 +504,9 @@ server.registerTool(
         tool: "get_air_quality",
         summary,
         rawResponse: { hit, reading },
+        lat: hit.lat,
+        lon: hit.lon,
+        country: hit.country,
       });
 
       const cacheNote = cached ? " (cached)" : "";
@@ -565,10 +582,15 @@ server.registerTool(
         ":\n";
 
       const body = rows
-        .map(
-          (r, i) =>
-            `${i + 1}. [${r.searched_at}] ${r.city} (${r.tool})\n   ${r.summary ?? ""}`,
-        )
+        .map((r, i) => {
+          const countryTag = r.country ? ` (${r.country})` : "";
+          const timesTag =
+            r.times_searched > 1 ? ` [×${r.times_searched}]` : "";
+          return (
+            `${i + 1}. [${r.searched_at}] ${r.city}${countryTag}${timesTag} (${r.tool})\n` +
+            `   ${r.summary ?? ""}`
+          );
+        })
         .join("\n");
 
       return { content: [{ type: "text", text: `${header}\n${body}` }] };
@@ -665,7 +687,10 @@ server.registerTool(
       }
 
       const topCitiesText = stats.topCities
-        .map((c, i) => `  ${i + 1}. ${c.city} (${c.count})`)
+        .map((c, i) => {
+          const countryTag = c.country ? ` (${c.country})` : "";
+          return `  ${i + 1}. ${c.city}${countryTag} — ${c.count}`;
+        })
         .join("\n");
 
       const byToolText = stats.byTool
