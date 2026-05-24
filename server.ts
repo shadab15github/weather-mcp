@@ -1,11 +1,20 @@
+import "./silence-warnings.js";
+
 import dotenv from "dotenv";
 dotenv.config({ quiet: true });
+
+import { randomUUID } from "node:crypto";
+import express from "express";
 
 import axios, { AxiosError } from "axios";
 import { z } from "zod";
 
-import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
+import {
+  McpServer,
+  ResourceTemplate,
+} from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 
 import {
   logSearch,
@@ -14,6 +23,15 @@ import {
   getStats,
   getDistinctCities,
 } from "./db.js";
+import { aggregateByDay, type ForecastSlot } from "./forecast.js";
+import {
+  AQI_LABELS,
+  describeApiError,
+  errorResult,
+  tempUnit,
+  windUnit,
+  type Units,
+} from "./errors.js";
 
 const API_KEY = process.env.OPENWEATHER_API_KEY;
 
@@ -67,42 +85,6 @@ const unitsSchema = z
   .enum(["metric", "imperial", "standard"])
   .default("metric")
   .describe("metric=°C/m·s⁻¹, imperial=°F/mph, standard=K/m·s⁻¹");
-
-type Units = z.infer<typeof unitsSchema>;
-
-function tempUnit(units: Units): string {
-  return units === "metric" ? "°C" : units === "imperial" ? "°F" : "K";
-}
-
-function windUnit(units: Units): string {
-  return units === "imperial" ? "mph" : "m/s";
-}
-
-function errorResult(text: string) {
-  return {
-    content: [{ type: "text" as const, text }],
-    isError: true,
-  };
-}
-
-function describeApiError(err: unknown, label: string): string {
-  if (err instanceof AxiosError && err.response) {
-    const status = err.response.status;
-    const apiMessage =
-      (err.response.data as { message?: string } | undefined)?.message ??
-      err.message;
-    if (status === 404) return `${label} not found by OpenWeather.`;
-    if (status === 401) return `OpenWeather API key is invalid or unauthorized.`;
-    if (status === 429)
-      return `OpenWeather rate limit hit. Please retry in a minute.`;
-    return `OpenWeather error (${status}): ${apiMessage}`;
-  }
-  if (err instanceof AxiosError && err.code === "ECONNABORTED") {
-    return `OpenWeather request timed out. Check your network.`;
-  }
-  if (err instanceof Error) return `Network error: ${err.message}`;
-  return `Unknown error: ${String(err)}`;
-}
 
 async function fetchByCity<T>(
   endpoint: "weather" | "forecast",
@@ -180,7 +162,13 @@ async function geocodeCity(city: string): Promise<GeocodeHit> {
       "GEOCODE_NOT_FOUND",
       undefined,
       undefined,
-      { status: 404, statusText: "Not Found", data: { message: "city not found" }, headers: {}, config: {} as never },
+      {
+        status: 404,
+        statusText: "Not Found",
+        data: { message: "city not found" },
+        headers: {},
+        config: {} as never,
+      },
     );
   }
 
@@ -323,12 +311,6 @@ server.registerTool(
 // FORECAST
 // =======================
 
-interface ForecastSlot {
-  dt_txt: string;
-  main: { temp: number; temp_min: number; temp_max: number };
-  weather: { description: string; main: string }[];
-}
-
 interface ForecastResponse {
   list: ForecastSlot[];
   city?: {
@@ -336,41 +318,6 @@ interface ForecastResponse {
     country?: string;
     coord?: { lat: number; lon: number };
   };
-}
-
-interface DailySummary {
-  date: string;
-  tempMin: number;
-  tempMax: number;
-  condition: string;
-}
-
-function aggregateByDay(list: ForecastSlot[]): DailySummary[] {
-  const byDate = new Map<string, ForecastSlot[]>();
-  for (const slot of list) {
-    const date = slot.dt_txt.split(" ")[0];
-    const bucket = byDate.get(date) ?? [];
-    bucket.push(slot);
-    byDate.set(date, bucket);
-  }
-
-  return Array.from(byDate.entries())
-    .slice(0, 5)
-    .map(([date, slots]) => {
-      const tempMin = Math.min(...slots.map((s) => s.main.temp_min));
-      const tempMax = Math.max(...slots.map((s) => s.main.temp_max));
-      const midday = slots.reduce((best, s) => {
-        const hour = parseInt(s.dt_txt.split(" ")[1].slice(0, 2), 10);
-        const bestHour = parseInt(best.dt_txt.split(" ")[1].slice(0, 2), 10);
-        return Math.abs(hour - 12) < Math.abs(bestHour - 12) ? s : best;
-      });
-      return {
-        date,
-        tempMin,
-        tempMax,
-        condition: midday.weather[0].description,
-      };
-    });
 }
 
 server.registerTool(
@@ -458,14 +405,6 @@ interface AirPollutionResponse {
     };
   }>;
 }
-
-const AQI_LABELS: Record<1 | 2 | 3 | 4 | 5, string> = {
-  1: "Good",
-  2: "Fair",
-  3: "Moderate",
-  4: "Poor",
-  5: "Very Poor",
-};
 
 server.registerTool(
   "get_air_quality",
@@ -638,7 +577,8 @@ server.registerTool(
       const deleted = deleteHistory({ days, city, all });
       const filterDesc: string[] = [];
       if (all) filterDesc.push("all rows");
-      if (days !== undefined) filterDesc.push(`older than ${days} day${days === 1 ? "" : "s"}`);
+      if (days !== undefined)
+        filterDesc.push(`older than ${days} day${days === 1 ? "" : "s"}`);
       if (city) filterDesc.push(`for city "${city}"`);
 
       return {
@@ -801,11 +741,83 @@ server.registerResource(
 );
 
 // =======================
+// API KEY PROBE
+// =======================
+
+async function probeApiKey(): Promise<void> {
+  try {
+    await axios.get(`https://api.openweathermap.org/data/2.5/weather`, {
+      params: { q: "London", appid: API_KEY, units: "metric" },
+      timeout: 10_000,
+    });
+    console.error("[weather-mcp] OpenWeather API key verified.");
+  } catch (err) {
+    if (err instanceof AxiosError && err.response?.status === 401) {
+      console.error(
+        "[weather-mcp] WARNING: OPENWEATHER_API_KEY is invalid (401). " +
+          "The server will start but every weather call will fail until you fix it.",
+      );
+    } else if (err instanceof AxiosError && err.code === "ECONNABORTED") {
+      console.error(
+        "[weather-mcp] WARNING: Could not verify API key — request timed out.",
+      );
+    } else {
+      console.error(
+        "[weather-mcp] WARNING: Could not verify API key:",
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+}
+
+// =======================
 // START SERVER
 // =======================
 
-const transport = new StdioServerTransport();
+async function startStdio(): Promise<void> {
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+  console.error("Weather MCP Server running on stdio.");
+}
 
-await server.connect(transport);
+async function startHttp(port: number): Promise<void> {
+  const app = express();
+  app.use(express.json());
 
-console.error("Weather MCP Server Running...");
+  const transport = new StreamableHTTPServerTransport({
+    sessionIdGenerator: () => randomUUID(),
+  });
+
+  await server.connect(transport);
+
+  app.post("/mcp", async (req, res) => {
+    await transport.handleRequest(req, res, req.body);
+  });
+
+  app.get("/mcp", async (req, res) => {
+    await transport.handleRequest(req, res);
+  });
+
+  app.delete("/mcp", async (req, res) => {
+    await transport.handleRequest(req, res);
+  });
+
+  app.get("/health", (_req, res) => {
+    res.json({ status: "ok", transport: "http" });
+  });
+
+  app.listen(port, () => {
+    console.error(`Weather MCP Server running on http://localhost:${port}/mcp`);
+  });
+}
+
+await probeApiKey();
+
+const transportMode = (process.env.MCP_TRANSPORT ?? "stdio").toLowerCase();
+
+if (transportMode === "http") {
+  const port = parseInt(process.env.MCP_HTTP_PORT ?? "3000", 10);
+  await startHttp(port);
+} else {
+  await startStdio();
+}

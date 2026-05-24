@@ -448,14 +448,97 @@ Then run `npm start` — startup trim will null its `raw_response`.
 
 ---
 
+# Polish
+
+Polish-level improvements: **silenced SQLite ExperimentalWarning**, **startup API-key probe**, **HTTP transport option**, and **vitest test suite**.
+
+## 21. Silenced ExperimentalWarning
+
+Just start the server normally; the `(node:NNNN) ExperimentalWarning: SQLite is an experimental feature` line that used to spam every launch is now suppressed (everything else still prints).
+
+```
+npm start
+```
+
+Expected stderr (no warning):
+
+```
+[weather-mcp] OpenWeather API key verified.
+Weather MCP Server running on stdio.
+```
+
+## 22. API-key startup probe
+
+`server.ts` makes a one-shot `GET /weather?q=London` to OpenWeather before accepting requests. Three outcomes:
+
+```
+npm start
+```
+
+- Valid key → `[weather-mcp] OpenWeather API key verified.`
+- Invalid key → `[weather-mcp] WARNING: OPENWEATHER_API_KEY is invalid (401). The server will start but every weather call will fail until you fix it.`
+- Network down → `[weather-mcp] WARNING: Could not verify API key: <reason>`
+
+The server starts in all three cases — the probe is informational, not blocking.
+
+## 23. HTTP transport option
+
+Default transport is stdio (no change). Opt-in to HTTP with two env vars:
+
+```
+$env:MCP_TRANSPORT='http'
+$env:MCP_HTTP_PORT='3737'    # optional; default 3000
+npm start
+```
+
+Expected:
+
+```
+[weather-mcp] OpenWeather API key verified.
+Weather MCP Server running on http://localhost:3737/mcp
+```
+
+Health check:
+
+```
+curl http://localhost:3737/health
+# {"status":"ok","transport":"http"}
+```
+
+MCP endpoints:
+
+- `POST /mcp` — initialize + tool calls (with `Mcp-Session-Id` header after the first response)
+- `GET /mcp`  — SSE notification stream
+- `DELETE /mcp` — close session
+
+Useful for connecting multiple clients to a single running server, or exposing it to a non-local client.
+
+## 24. Test suite
+
+```
+npm test          # one-shot
+npm run test:watch  # watch mode
+```
+
+Covers:
+- `forecast.ts` — `aggregateByDay` (5 cases, including empty + single-day)
+- `errors.ts` — `describeApiError` (404 / 401 / 429 / generic / timeout / non-Error), unit helpers, AQI labels, error envelope
+- `db.ts` — `logSearch` / `getHistory` basics, 60-second rolling dedupe (collapse + tool/city non-collision + COALESCE), `deleteHistory` (unfiltered refusal + by-city + all), `trimRawResponses` (only ages out old rows), `getStats` + `getDistinctCities`
+
+Tests use a temp SQLite file via `WEATHER_MCP_DB_PATH` so they never touch the real `search_history.db`.
+
+---
+
 ## Notes
 
 - The connector name your client shows depends on how you registered the MCP server. The server is named `weather-mcp-server` (see `server.ts`); the project folder is `weather-mcp`. Use whichever name appears in your client's connector list (e.g. the key under `mcpServers` in Claude Desktop's config).
 - The local DB file `search_history.db` is created next to the server on first write and is git-ignored.
 - Run the server with:
-  - `npm start` — one-shot via `tsx`
+  - `npm start` — one-shot via `tsx` (stdio transport, default)
   - `npm run dev` — auto-restart on file changes (`tsx watch`)
+  - `npm run start:http` — HTTP transport on `MCP_HTTP_PORT` (default 3000)
   - `npm run typecheck` — `tsc --noEmit`
+  - `npm test` / `npm run test:watch` — vitest suite
 - You can inspect rows directly with any SQLite browser, or:
   ```
   node -e "const {DatabaseSync}=require('node:sqlite');const db=new DatabaseSync('search_history.db');console.log(db.prepare('SELECT id,city,tool,searched_at FROM searches ORDER BY id DESC').all())"
