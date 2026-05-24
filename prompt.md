@@ -3,9 +3,18 @@
 Prompts for testing the `weather-mcp` connector. Run section 1 first to populate the local SQLite DB, then run sections 2 and 3 to query it.
 
 Tools exposed by the server:
-- `get_current_weather` — current weather for a city
-- `get_weather_forecast` — 5-day forecast for a city
+- `get_current_weather` — current weather for a city (supports `units`)
+- `get_weather_by_coords` — current weather for raw `lat`/`lon` (supports `units`)
+- `get_weather_forecast` — 5-day forecast for a city (supports `units`)
+- `get_air_quality` — current AQI + pollutants for a city
 - `get_search_history` — past searches stored in `search_history.db` (filters: `days`, `limit`, `city`)
+- `delete_search_history` — prune rows (`days` / `city` / `all`)
+- `get_search_stats` — aggregate stats: total, top cities, by tool, per day
+
+Resources (URI-addressable, read-only):
+- `weather://history/recent` — last 50 searches as JSON
+- `weather://history/cities` — distinct searched cities with counts
+- `weather://history/city/{city}` — all searches for a given city
 
 ---
 
@@ -216,10 +225,133 @@ Using weather-mcp, show only my Mumbai searches.
 
 ---
 
+# Medium-Impact Features
+
+Prompts for the four medium-impact additions: **`units` param**, **coords-based lookup**, **air quality**, **admin tools** (delete + stats), and **MCP resources**.
+
+## 10. `units` param (metric / imperial / standard)
+
+```
+Using weather-mcp, get current weather in Mumbai with units=imperial.
+```
+*(expect °F and mph)*
+```
+Using weather-mcp, get current weather in London with units=standard.
+```
+*(expect Kelvin)*
+```
+Using weather-mcp, give me the 5 day forecast for Tokyo with units=imperial.
+```
+*(daily min/max in °F)*
+```
+Using weather-mcp, current weather in Delhi.
+```
+*(no units → defaults to metric)*
+
+## 11. Coordinate lookup (`get_weather_by_coords`)
+
+```
+Using weather-mcp, get weather by coords lat=19.0760, lon=72.8777.
+```
+*(Mumbai)*
+```
+Using weather-mcp, get weather by coords lat=40.7128, lon=-74.0060 units=imperial.
+```
+*(New York in °F)*
+```
+Using weather-mcp, get weather by coords lat=35.6762, lon=139.6503.
+```
+*(Tokyo)*
+```
+Using weather-mcp, get weather by coords lat=200, lon=0.
+```
+*(expect validation error — lat must be ≤ 90)*
+
+## 12. Air quality (`get_air_quality`)
+
+```
+Using weather-mcp, what's the air quality in Delhi?
+```
+```
+Using weather-mcp, get air quality for Beijing.
+```
+```
+Using weather-mcp, AQI in Los Angeles please.
+```
+```
+Using weather-mcp, get air quality for "Atlantis".
+```
+*(geocoder 404 → friendly message)*
+
+AQI scale: 1=Good, 2=Fair, 3=Moderate, 4=Poor, 5=Very Poor.
+
+## 13. Stats (`get_search_stats`)
+
+Run after populating some history.
+
+```
+Using weather-mcp, give me my search stats.
+```
+```
+Using weather-mcp, get_search_stats with days=7.
+```
+```
+Using weather-mcp, what's my most-searched city?
+```
+
+## 14. Delete history (`delete_search_history`)
+
+**Each prompt requires at least one filter** — the tool refuses an unfiltered call.
+
+```
+Using weather-mcp, delete search history for city "Tokyo".
+```
+```
+Using weather-mcp, delete_search_history with days=30.
+```
+*(deletes rows OLDER than 30 days)*
+```
+Using weather-mcp, delete_search_history with no filters.
+```
+*(expect an error: "requires at least one filter")*
+```
+Using weather-mcp, delete_search_history with all=true.
+```
+*(wipes the whole table — use carefully)*
+
+## 15. MCP resources (read via `resources/read`)
+
+If your client supports MCP resources, point it at:
+
+```
+weather://history/recent
+weather://history/cities
+weather://history/city/Mumbai
+weather://history/city/Delhi
+```
+
+Or ask the model:
+
+```
+Using weather-mcp, read the resource at weather://history/recent.
+```
+```
+Using weather-mcp, what's in weather://history/cities?
+```
+```
+Using weather-mcp, show me the resource weather://history/city/Mumbai.
+```
+
+---
+
 ## Notes
 
-- The connector name your client shows depends on how you registered the MCP server. The server is named `weather-mcp-server` ([server.ts:17](server.ts#L17)); the project folder is `weather-mcp`. Use whichever name appears in your client's connector list (e.g. the key under `mcpServers` in Claude Desktop's config).
+- The connector name your client shows depends on how you registered the MCP server. The server is named `weather-mcp-server` (see `server.ts`); the project folder is `weather-mcp`. Use whichever name appears in your client's connector list (e.g. the key under `mcpServers` in Claude Desktop's config).
 - The local DB file `search_history.db` is created next to the server on first write and is git-ignored.
+- Run the server with:
+  - `npm start` — one-shot via `tsx`
+  - `npm run dev` — auto-restart on file changes (`tsx watch`)
+  - `npm run typecheck` — `tsc --noEmit`
 - You can inspect rows directly with any SQLite browser, or:
   ```
   node -e "const {DatabaseSync}=require('node:sqlite');const db=new DatabaseSync('search_history.db');console.log(db.prepare('SELECT id,city,tool,searched_at FROM searches ORDER BY id DESC').all())"

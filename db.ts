@@ -85,3 +85,110 @@ export function getHistory({ days, limit, city }: GetHistoryOptions = {}): Searc
 
   return db.prepare(sql).all(...params) as unknown as SearchRow[];
 }
+
+export interface DeleteHistoryOptions {
+  days?: number;
+  city?: string;
+  all?: boolean;
+}
+
+export function deleteHistory({ days, city, all }: DeleteHistoryOptions): number {
+  if (!all && days === undefined && !city) {
+    throw new Error(
+      "deleteHistory requires at least one filter (days, city, or all=true).",
+    );
+  }
+
+  if (all) {
+    const result = db.prepare(`DELETE FROM searches`).run();
+    return Number(result.changes);
+  }
+
+  const where: string[] = [];
+  const params: (string | number)[] = [];
+
+  if (days !== undefined) {
+    where.push(`searched_at < datetime('now', ?)`);
+    params.push(`-${days} days`);
+  }
+
+  if (city) {
+    where.push(`LOWER(city) = LOWER(?)`);
+    params.push(city);
+  }
+
+  const sql = `DELETE FROM searches WHERE ${where.join(" AND ")}`;
+  const result = db.prepare(sql).run(...params);
+  return Number(result.changes);
+}
+
+export interface SearchStats {
+  total: number;
+  byTool: Array<{ tool: string; count: number }>;
+  topCities: Array<{ city: string; count: number }>;
+  perDay: Array<{ date: string; count: number }>;
+  firstSearchAt: string | null;
+  lastSearchAt: string | null;
+}
+
+export function getStats(days = 30): SearchStats {
+  const total = (
+    db.prepare(`SELECT COUNT(*) AS n FROM searches`).get() as { n: number }
+  ).n;
+
+  if (total === 0) {
+    return {
+      total: 0,
+      byTool: [],
+      topCities: [],
+      perDay: [],
+      firstSearchAt: null,
+      lastSearchAt: null,
+    };
+  }
+
+  const byTool = db
+    .prepare(
+      `SELECT tool, COUNT(*) AS count FROM searches GROUP BY tool ORDER BY count DESC`,
+    )
+    .all() as Array<{ tool: string; count: number }>;
+
+  const topCities = db
+    .prepare(
+      `SELECT city, COUNT(*) AS count FROM searches GROUP BY city ORDER BY count DESC LIMIT 5`,
+    )
+    .all() as Array<{ city: string; count: number }>;
+
+  const perDay = db
+    .prepare(
+      `SELECT DATE(searched_at) AS date, COUNT(*) AS count
+       FROM searches
+       WHERE searched_at >= datetime('now', ?)
+       GROUP BY DATE(searched_at)
+       ORDER BY date DESC`,
+    )
+    .all(`-${days} days`) as Array<{ date: string; count: number }>;
+
+  const range = db
+    .prepare(
+      `SELECT MIN(searched_at) AS first, MAX(searched_at) AS last FROM searches`,
+    )
+    .get() as { first: string | null; last: string | null };
+
+  return {
+    total,
+    byTool,
+    topCities,
+    perDay,
+    firstSearchAt: range.first,
+    lastSearchAt: range.last,
+  };
+}
+
+export function getDistinctCities(): Array<{ city: string; count: number }> {
+  return db
+    .prepare(
+      `SELECT city, COUNT(*) AS count FROM searches GROUP BY city ORDER BY count DESC`,
+    )
+    .all() as Array<{ city: string; count: number }>;
+}
