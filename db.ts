@@ -33,7 +33,14 @@ export interface LogSearchInput {
 }
 
 export function logSearch({ city, tool, summary, rawResponse }: LogSearchInput) {
-  insertStmt.run(city, tool, summary, JSON.stringify(rawResponse));
+  try {
+    insertStmt.run(city, tool, summary, JSON.stringify(rawResponse));
+  } catch (err) {
+    console.error(
+      `[weather-mcp] Failed to log search for ${city}/${tool}:`,
+      err instanceof Error ? err.message : err,
+    );
+  }
 }
 
 export interface SearchRow {
